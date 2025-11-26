@@ -21,14 +21,12 @@ export async function POST(req: Request) {
   // 1) Find the latest user message and its plain text
   const latestUserMessage = messages.filter((msg) => msg.role === "user").pop();
 
-  let textParts = "";
-  if (latestUserMessage) {
-    textParts = latestUserMessage.parts
-      .filter((part) => part.type === "text")
-      .map((part) => ("text" in part ? part.text : ""))
-      .join("");
-  }
-
+let textParts = "";
+if (latestUserMessage) {
+  textParts = latestUserMessage.parts
+    .map((part: any) => part.text ?? "")
+    .join("");
+}
   // 2) Moderation check: if text breaks rules, stop and reply with a denial
   if (textParts) {
     const moderationResult = await isContentFlagged(textParts);
