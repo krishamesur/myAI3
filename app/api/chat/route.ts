@@ -82,7 +82,7 @@ if (latestUserMessage) {
       console.error("Error fetching stock analysis", error);
     }
   }
-
+console.log("Stock analysis data:", stockAnalysisData);
   // 5) Build a custom system prompt that includes the JSON from TwelveData
   let systemPrompt = SYSTEM_PROMPT;
 
