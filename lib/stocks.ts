@@ -1,7 +1,5 @@
 // lib/stocks.ts
 
-const BASE_URL = "https://api.twelvedata.com";
-
 export type StockAnalysisData = {
   symbol: string;
   close?: number;
@@ -18,73 +16,23 @@ export type StockAnalysisData = {
   ev_ebitda?: number;
 };
 
-// Helper to safely convert strings to numbers
-function toNumber(val: unknown): number | undefined {
-  if (val === null || val === undefined) return undefined;
-  const n = Number(val);
-  return Number.isNaN(n) ? undefined : n;
-}
-
 export async function fetchStockAnalysis(symbol: string): Promise<StockAnalysisData> {
-  const apiKey = process.env.TWELVEDATA_API_KEY;
-  if (!apiKey) {
-    throw new Error("TWELVEDATA_API_KEY is not set in environment variables");
-  }
+  // TEMPORARY: dummy data just to test the flow.
+  // Later we will replace this with real TwelveData calls.
 
-  // 1) Quote endpoint, gives price, some ratios and maybe simple returns
-  const quoteUrl = `${BASE_URL}/quote?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
-
-  const quoteRes = await fetch(quoteUrl);
-  if (!quoteRes.ok) {
-    throw new Error(`TwelveData quote error: ${quoteRes.status} ${quoteRes.statusText}`);
-  }
-  const quoteData = await quoteRes.json();
-
-  if ((quoteData as any).code) {
-    // TwelveData style error
-    throw new Error(`TwelveData quote API error: ${(quoteData as any).message || "Unknown error"}`);
-  }
-
-  // 2) Fundamentals / ratios endpoint
-  // Check TwelveData docs for the exact path and fields, then adjust this URL
-  const fundamentalsUrl = `${BASE_URL}/fundamentals?symbol=${encodeURIComponent(
+  return {
     symbol,
-  )}&apikey=${apiKey}`;
-
-  const fundamentalsRes = await fetch(fundamentalsUrl);
-  if (!fundamentalsRes.ok) {
-    throw new Error(
-      `TwelveData fundamentals error: ${fundamentalsRes.status} ${fundamentalsRes.statusText}`,
-    );
-  }
-  const fundamentalsData = await fundamentalsRes.json();
-
-  if ((fundamentalsData as any).code) {
-    throw new Error(
-      `TwelveData fundamentals API error: ${(fundamentalsData as any).message || "Unknown error"}`,
-    );
-  }
-
-  // Here you or your coder friend will map the actual field names
-  // from TwelveData to our clean object.
-  // The field names below are examples and must be adjusted
-  // according to the real JSON you see from TwelveData.
-
-  const result: StockAnalysisData = {
-    symbol,
-    close: toNumber((quoteData as any).close),
-    pe: toNumber((quoteData as any).pe ?? (fundamentalsData as any).pe_ratio),
-    pb: toNumber((quoteData as any).pb ?? (fundamentalsData as any).pb_ratio),
-    roe: toNumber((fundamentalsData as any).roe),
-    roce: toNumber((fundamentalsData as any).roce),
-    return_1m: toNumber((fundamentalsData as any).return_1m),
-    return_6m: toNumber((fundamentalsData as any).return_6m),
-    return_1y: toNumber((fundamentalsData as any).return_1y),
-    industry_pe: toNumber((fundamentalsData as any).industry_pe),
-    industry_pb: toNumber((fundamentalsData as any).industry_pb),
-    net_profit_margin: toNumber((fundamentalsData as any).net_profit_margin),
-    ev_ebitda: toNumber((fundamentalsData as any).ev_ebitda),
+    close: 1500,
+    pe: 18.5,
+    pb: 2.7,
+    roe: 15.2,
+    roce: 18.0,
+    return_1m: 3.5,
+    return_6m: 12.0,
+    return_1y: 22.0,
+    industry_pe: 16.0,
+    industry_pb: 2.2,
+    net_profit_margin: 20.0,
+    ev_ebitda: 7.5,
   };
-
-  return result;
 }
