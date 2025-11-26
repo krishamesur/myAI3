@@ -5,6 +5,7 @@ import { SYSTEM_PROMPT } from '@/prompts';
 import { isContentFlagged } from '@/lib/moderation';
 import { webSearch } from './tools/web-search';
 import { vectorDatabaseSearch } from './tools/search-vector-database';
+import { fetchStockAnalysis } from "@/lib/stocks";
 
 export const maxDuration = 30;
 export async function POST(req: Request) {
