@@ -127,6 +127,27 @@ export async function POST(req: Request) {
   let indiaStockData: any = null;
   let analysisCountry: CountryMode = null;
   let shouldAskCountryClarification = false;
+// If no country is chosen yet, we may need to explicitly ask at the start
+let forceAskMarketQuestion = false;
+
+if (!countryMode) {
+  const lower = latestText.toLowerCase();
+
+  const isGreetingOrGeneric =
+    !lower ||
+    lower === "hi" ||
+    lower === "hello" ||
+    lower === "hey" ||
+    lower.includes("help") ||
+    lower.includes("analyse") ||
+    lower.includes("research") ||
+    lower.includes("stock");
+
+  // For the very first interaction, just ask them which market they want
+  if (isGreetingOrGeneric) {
+    forceAskMarketQuestion = true;
+  }
+}
 
   // 3) Check if the latest message is just a country selection
   const lower = latestText.toLowerCase();
@@ -208,6 +229,15 @@ export async function POST(req: Request) {
       "\n\nThe user has just chosen which market they want to research (US or Indian stocks).\n" +
       "Acknowledge their choice in one short sentence and ask them to type a stock symbol they want to analyse.";
   }
+  
+  if (forceAskMarketQuestion) {
+  systemPrompt +=
+    "\n\nThe user has not chosen a market yet. Do not analyse any stocks now and do not call any tools.\n" +
+    "Ask them this exact question in simple words:\n" +
+    "\"Do you want to research US stocks or Indian (NIFTY 500) stocks today?\"\n" +
+    "Wait for their answer before you try to analyse any stock.";
+}
+
 
   // 5) Call the model as before
   const result = streamText({
