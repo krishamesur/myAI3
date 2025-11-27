@@ -206,6 +206,11 @@ function loadNifty500FromCsv() {
  * - User may type "HDFCBANK", "HDFC Bank", "reliance", "tcs" etc.
  * - We match input text to company name (case-insensitive, contains check)
  */
+  /**
+ * Look up an Indian stock from NIFTY 500 CSV using fuzzy company-name matching.
+ * - User may type "HDFCBANK", "HDFC Bank", "reliance", "tcs" etc.
+ * - We match input text to company name (case-insensitive, contains check)
+ */
 export function fetchIndianStockFundamentals(input: string): IndiaStockFundamentals | null {
   loadNifty500FromCsv();
   if (!nifty500Cache) return null;
