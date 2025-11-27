@@ -1,12 +1,13 @@
 // lib/stocks.ts
 
+import fs from "fs";
+import path from "path";
 const BASE_URL = "https://api.twelvedata.com";
 
 export type USStockAnalysisData = {
   symbol: string;
 
   // From /quote
-  market_cap?: number;
   close?: number;
   fifty_two_week_high?: number;
   fifty_two_week_low?: number;
@@ -22,6 +23,19 @@ export type USStockAnalysisData = {
   return_1y?: number;
 };
 
+export type IndiaStockFundamentals = {
+  symbol: string;
+  company_name?: string;
+  market_cap?: number;
+  cmp?: number;
+  pe?: number;
+  pb?: number;
+  roe?: number;
+  roce?: number;
+  return_1m?: number;
+  return_6m?: number;
+  return_1y?: number;
+};
 // Safely convert unknown → number | undefined
 function toNumber(val: unknown): number | undefined {
   if (val === null || val === undefined) return undefined;
@@ -127,6 +141,77 @@ export async function fetchStockAnalysis(symbol: string): Promise<USStockAnalysi
       .map((v) => Number(v.close))
       .filter((n) => !Number.isNaN(n));
   }
+// ---------- India NIFTY 500 CSV loading ----------
+
+let nifty500Cache: Map<string, IndiaStockFundamentals> | null = null;
+
+function loadNifty500FromCsv() {
+  if (nifty500Cache) return; // already loaded
+
+  nifty500Cache = new Map();
+
+  try {
+    const csvPath = path.join(process.cwd(), "data", "nifty500.csv");
+    const raw = fs.readFileSync(csvPath, "utf8");
+
+    const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length < 2) return;
+
+    const header = lines[0].split(",").map((h) => h.trim());
+    const idx = (name: string) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
+
+    // Adjust these names if your CSV headers are different
+    const symbolIdx = idx("Symbol");
+    const nameIdx = idx("Company") !== -1 ? idx("Company") : idx("Name");
+    const mcapIdx = idx("MarketCap");
+    const cmpIdx = idx("CMP");
+    const peIdx = idx("PE");
+    const pbIdx = idx("PB");
+    const roeIdx = idx("ROE");
+    const roceIdx = idx("ROCE");
+    const r1mIdx = idx("Ret_1M");
+    const r6mIdx = idx("Ret_6M");
+    const r1yIdx = idx("Ret_1Y");
+
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(",");
+      if (parts.length < 2) continue;
+
+      const symbolRaw = parts[symbolIdx] || "";
+      const symbol = symbolRaw.trim().toUpperCase();
+      if (!symbol) continue;
+
+      const rec: IndiaStockFundamentals = {
+        symbol,
+        company_name: nameIdx !== -1 ? parts[nameIdx].trim() : undefined,
+        market_cap: mcapIdx !== -1 ? toNumber(parts[mcapIdx]) : undefined,
+        cmp: cmpIdx !== -1 ? toNumber(parts[cmpIdx]) : undefined,
+        pe: peIdx !== -1 ? toNumber(parts[peIdx]) : undefined,
+        pb: pbIdx !== -1 ? toNumber(parts[pbIdx]) : undefined,
+        roe: roeIdx !== -1 ? toNumber(parts[roeIdx]) : undefined,
+        roce: roceIdx !== -1 ? toNumber(parts[roceIdx]) : undefined,
+        return_1m: r1mIdx !== -1 ? toNumber(parts[r1mIdx]) : undefined,
+        return_6m: r6mIdx !== -1 ? toNumber(parts[r6mIdx]) : undefined,
+        return_1y: r1yIdx !== -1 ? toNumber(parts[r1yIdx]) : undefined,
+      };
+
+      nifty500Cache.set(symbol, rec);
+    }
+  } catch (err) {
+    console.error("Error loading NIFTY 500 CSV", err);
+  }
+}
+
+/**
+ * Look up an Indian stock in the local NIFTY 500 CSV.
+ * Returns null if not found or if CSV is missing.
+ */
+export function fetchIndianStockFundamentals(symbol: string): IndiaStockFundamentals | null {
+  loadNifty500FromCsv();
+  if (!nifty500Cache) return null;
+  const key = symbol.trim().toUpperCase();
+  return nifty500Cache.get(key) || null;
+}
 
   const result: USStockAnalysisData = {
     symbol,
