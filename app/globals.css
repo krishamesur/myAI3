@@ -2,7 +2,6 @@
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -70,7 +69,7 @@
   --primary-foreground: #FFFFFF;
 
   /* Secondary (lighter blue) */
-  --secondary: #4B75E8;        
+  --secondary: #4B75E8;
   --secondary-foreground: #FFFFFF;
 
   /* Accent (soft pastel blue chips) */
@@ -81,11 +80,10 @@
   --muted: #E2E8F7;
   --muted-foreground: #4B5563;
   --input: #B3C6FF;
-  --input-foreground: #0F172A; 
-
+  --input-foreground: #0F172A;
 
   /* Borders + rings */
-  --border: #2248B0; 
+  --border: #2248B0;
   --ring: #FFFFFF;
 
   /* Danger */
@@ -164,9 +162,11 @@
   body {
     @apply bg-background text-foreground;
   }
-  input, textarea {
-  color: var(--input-foreground);
-}
+
+  input,
+  textarea {
+    color: var(--input-foreground);
+  }
 
   .single-char-link {
     @apply bg-card text-card-foreground px-2 py-1 rounded-full hover:underline hover:scale-105 transition-all duration-100 !no-underline border-input border;
