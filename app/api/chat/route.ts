@@ -11,108 +11,76 @@ import { SYSTEM_PROMPT } from "@/prompts";
 import { isContentFlagged } from "@/lib/moderation";
 import { webSearch } from "./tools/web-search";
 import { vectorDatabaseSearch } from "./tools/search-vector-database";
-import { fetchStockAnalysis, fetchIndianStockFundamentals } from "@/lib/stocks";
+import {
+  fetchStockAnalysis,
+  fetchIndianStockFundamentals,
+} from "@/lib/stocks";
 
 export const maxDuration = 30;
 
 type CountryMode = "US" | "IN" | null;
 
 // Extract plain text from a UIMessage
-function getTextFromMessage(msg: UIMessage): string {
+function getText(msg: UIMessage): string {
   return msg.parts
-    .filter((part) => part.type === "text")
-    .map((part) => ("text" in part ? part.text : ""))
+    .filter((p) => p.type === "text")
+    .map((p) => ("text" in p ? p.text : ""))
     .join("")
     .trim();
 }
 
-// Look through conversation history to see last chosen country
-function detectCountryFromHistory(messages: UIMessage[]): CountryMode {
-  let mode: CountryMode = null;
+// Read past messages to see if user already chose a market
+function detectCountry(messages: UIMessage[]): CountryMode {
+  let country: CountryMode = null;
 
   for (const msg of messages) {
     if (msg.role !== "user") continue;
-    const text = getTextFromMessage(msg).toLowerCase();
+    const t = getText(msg).toLowerCase();
 
-    if (
-      text.includes("us stocks") ||
-      text === "us" ||
-      text === "usa" ||
-      text.includes("united states")
-    ) {
-      mode = "US";
-    } else if (
-      text.includes("indian stocks") ||
-      text.includes("india") ||
-      text.includes("nifty 500") ||
-      text === "india"
-    ) {
-      mode = "IN";
-    }
+    if (t.includes("us stocks") || t === "us" || t === "usa")
+      country = "US";
+    else if (t.includes("indian stocks") || t.includes("india"))
+      country = "IN";
   }
 
-  return mode;
+  return country;
 }
 
-// Simple heuristic to see if a string looks like a US style stock symbol
+// Simple check for US-style symbols
 function looksLikeSymbol(text: string): boolean {
   if (!text) return false;
-  const trimmed = text.trim();
-
-  if (trimmed.length < 2 || trimmed.length > 15) return false;
-  if (/\s/.test(trimmed)) return false;
-
-  // allow letters, digits, and dot
-  if (!/^[A-Za-z0-9.]+$/.test(trimmed)) return false;
-
-  return true;
+  const t = text.trim();
+  if (t.length < 1 || t.length > 20) return false;
+  if (/\s/.test(t)) return false;
+  return /^[A-Za-z0-9.]+$/.test(t);
 }
 
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
+  const latestUserMessage = messages.filter((m) => m.role === "user").pop();
 
-  // 1) Find latest user message text
-  const latestUserMessage = messages.filter((msg) => msg.role === "user").pop();
+  let latest = "";
+  if (latestUserMessage) latest = getText(latestUserMessage);
 
-  let textParts = "";
-  if (latestUserMessage) {
-    textParts = getTextFromMessage(latestUserMessage);
-  }
-
-  // 2) Moderation check: if text breaks rules, stop and reply with denial
-  if (textParts) {
-    const moderationResult = await isContentFlagged(textParts);
-
-    if (moderationResult.flagged) {
+  // Moderation check
+  if (latest) {
+    const mod = await isContentFlagged(latest);
+    if (mod.flagged) {
       const stream = createUIMessageStream({
         execute({ writer }) {
-          const textId = "moderation-denial-text";
+          const id = "mod-deny";
 
-          writer.write({
-            type: "start",
-          });
-
-          writer.write({
-            type: "text-start",
-            id: textId,
-          });
-
+          writer.write({ type: "start" });
+          writer.write({ type: "text-start", id });
           writer.write({
             type: "text-delta",
-            id: textId,
+            id,
             delta:
-              moderationResult.denialMessage ||
+              mod.denialMessage ||
               "Your message violates our guidelines. I can't answer that.",
           });
-
-          writer.write({
-            type: "text-end",
-            id: textId,
-          });
-
-          writer.write({
-            type: "finish",
-          });
+          writer.write({ type: "text-end", id });
+          writer.write({ type: "finish" });
         },
       });
 
@@ -120,20 +88,22 @@ export async function POST(req: Request) {
     }
   }
 
-  const latestText = textParts.trim();
-  const countryMode = detectCountryFromHistory(messages);
-  const lower = latestText.toLowerCase();
+  const lower = latest.toLowerCase();
+  const countryMode = detectCountry(messages);
 
-  let usStockData: any = null;
-  let indiaStockData: any = null;
+  let usData: any = null;
+  let inData: any = null;
+
   let analysisCountry: CountryMode = null;
-  let shouldAskCountryClarification = false;
+  let askCountryClarify = false;
+  let forceAskFirstQuestion = false;
 
-  // If no country is chosen yet, we may need to explicitly ask at the start
-  let forceAskMarketQuestion = false;
+  // --------------------------------------------
+  // STEP 1: Force first question “Indian or US?”
+  // --------------------------------------------
 
   if (!countryMode) {
-    const isGreetingOrGeneric =
+    const isGreeting =
       !lower ||
       lower === "hi" ||
       lower === "hello" ||
@@ -144,116 +114,115 @@ export async function POST(req: Request) {
       lower.includes("research") ||
       lower.includes("stock");
 
-    // For the very first interaction, just ask them which market they want
-    if (isGreetingOrGeneric) {
-      forceAskMarketQuestion = true;
+    if (isGreeting) {
+      forceAskFirstQuestion = true;
     }
   }
 
-  // 3) Check if the latest message is just a country selection
+  // --------------------------------------------
+  // STEP 2: Detect market selection
+  // --------------------------------------------
+
   const isUsSelection =
     lower === "us" ||
     lower === "usa" ||
-    lower === "us stocks" ||
-    lower.includes("united states stocks");
+    lower.includes("us stocks");
 
   const isIndiaSelection =
     lower === "india" ||
-    lower === "indian stocks" ||
-    lower === "nifty 500" ||
-    lower.includes("nifty 500 stocks");
+    lower.includes("indian stocks");
 
   const isCountrySelection = isUsSelection || isIndiaSelection;
 
-  if (isCountrySelection) {
-    // User just chose a country. Do not call any stock API now.
-    // The model will simply acknowledge and ask for a stock symbol or name.
-  } else {
-    // 4) Handle stock queries
+  // --------------------------------------------
+  // STEP 3: Stock analysis path
+  // --------------------------------------------
 
-    // Case A: US mode → only act if it looks like a symbol
-    if (countryMode === "US" && looksLikeSymbol(latestText)) {
+  if (!isCountrySelection) {
+    // Case A: US mode active → expect US-style symbol
+    if (countryMode === "US" && looksLikeSymbol(latest)) {
       analysisCountry = "US";
       try {
-        usStockData = await fetchStockAnalysis(latestText);
-        console.log("US stock analysis data:", usStockData);
-      } catch (error) {
-        console.error("Error fetching US stock analysis", error);
+        usData = await fetchStockAnalysis(latest);
+      } catch (err) {
+        console.error("US data fetch error", err);
       }
     }
 
-    // Case B: India mode → accept symbol-like OR plain company names (eg "HDFC Bank")
-    else if (countryMode === "IN" && latestText.length > 1) {
+    // Case B: India mode active → accept symbol OR company name
+    else if (countryMode === "IN" && latest.length > 1) {
       analysisCountry = "IN";
       try {
-        indiaStockData = fetchIndianStockFundamentals(latestText);
-        console.log("India stock fundamentals:", indiaStockData);
-      } catch (error) {
-        console.error("Error fetching Indian stock fundamentals", error);
+        inData = fetchIndianStockFundamentals(latest);
+      } catch (err) {
+        console.error("Indian fetch error", err);
       }
     }
 
-    // Case C: no country chosen yet, but user typed something that looks like a symbol
-    else if (!countryMode && looksLikeSymbol(latestText)) {
-      shouldAskCountryClarification = true;
+    // Case C: No country chosen and user typed a symbol
+    else if (!countryMode && looksLikeSymbol(latest)) {
+      askCountryClarify = true;
     }
   }
 
-  // 5) Build the system prompt with any data we fetched
+  // --------------------------------------------
+  // STEP 4: Build system prompt
+  // --------------------------------------------
+
   let systemPrompt = SYSTEM_PROMPT;
 
-  if (analysisCountry === "US" && usStockData) {
+  // 4A: US analysis
+  if (analysisCountry === "US" && usData) {
     systemPrompt +=
-      "\n\nThe user is analysing a US stock.\n" +
-      "Here is structured US stock data for this symbol, in JSON format. " +
-      "Use this data to explain the technical metrics in simple language:\n" +
-      JSON.stringify(usStockData);
+      "\n\nThe user is analysing a US stock.\nHere is the data in JSON:\n" +
+      JSON.stringify(usData);
   }
 
+  // 4B: Indian analysis
   if (analysisCountry === "IN") {
-    if (indiaStockData) {
+    if (inData) {
       systemPrompt +=
         "\n\nThe user is analysing an Indian stock from the NIFTY 500 list.\n" +
-        "Here is structured fundamental data for this stock, in JSON format. " +
-        "Use this data to explain the basic fundamental metrics in simple language:\n" +
-        JSON.stringify(indiaStockData);
-    } else if (latestText.length > 1 && countryMode === "IN") {
+        "Here is the data in JSON:\n" +
+        JSON.stringify(inData);
+    } else if (countryMode === "IN") {
       systemPrompt +=
-        "\n\nThe user requested analysis for an Indian stock that is not found in the NIFTY 500 CSV.\n" +
-        "Politely tell the user that this stock is not part of the NIFTY 500 list right now and ask them to enter a stock from NIFTY 500. " +
-        "Do not attempt to analyse the stock.";
+        "\n\nThe user asked for an Indian stock that is NOT in the NIFTY 500 CSV.\n" +
+        "Politely ask them to choose another NIFTY 500 stock.";
     }
   }
 
-  if (shouldAskCountryClarification) {
+  // 4C: User typed stock but no country chosen
+  if (askCountryClarify) {
     systemPrompt +=
-      "\n\nThe user has typed what looks like a stock symbol, but they have not chosen between US stocks and Indian NIFTY 500 stocks yet.\n" +
-      "Politely ask them which country this stock belongs to (US stocks or Indian NIFTY 500) and do not attempt any analysis until they choose.";
+      "\n\nThe user typed something that looks like a stock symbol, but they have not chosen Indian or US.\n" +
+      "Ask them which market the stock belongs to.";
   }
 
+  // 4D: User chose country
   if (isCountrySelection) {
     systemPrompt +=
-      "\n\nThe user has just chosen which market they want to research (US or Indian stocks).\n" +
-      "Acknowledge their choice in one short sentence and ask them to type a stock symbol (for US) or a stock symbol or company name (for Indian NIFTY 500) that they want to analyse.";
+      "\n\nThe user has chosen a market. Acknowledge briefly and ask them to type the stock symbol or name.";
   }
 
-  if (forceAskMarketQuestion) {
+  // 4E: First message in conversation
+  if (forceAskFirstQuestion) {
     systemPrompt +=
-      "\n\nThe user has not chosen a market yet. Do not analyse any stocks now and do not call any tools.\n" +
-      "Ask them this exact question in simple words:\n" +
-      "\"Do you want to research US stocks or Indian (NIFTY 500) stocks today?\"\n" +
-      "Wait for their answer before you try to analyse any stock.";
+      "\n\nThis is the first message in the conversation and the user has NOT chosen a market.\n" +
+      "Ask ONLY this question:\n" +
+      "\"Hello, Welcome to Stock Unlock. Do you want to research Indian stocks or US stocks?\"\n" +
+      "Do NOT analyse any stock yet.";
   }
 
-  // 6) Call the model as before
+  // --------------------------------------------
+  // STEP 5: Call model
+  // --------------------------------------------
+
   const result = streamText({
     model: MODEL,
     system: systemPrompt,
     messages: convertToModelMessages(messages),
-    tools: {
-      webSearch,
-      vectorDatabaseSearch,
-    },
+    tools: { webSearch, vectorDatabaseSearch },
     stopWhen: stepCountIs(10),
     providerOptions: {
       openai: {
@@ -264,7 +233,5 @@ export async function POST(req: Request) {
     },
   });
 
-  return result.toUIMessageStreamResponse({
-    sendReasoning: true,
-  });
+  return result.toUIMessageStreamResponse({ sendReasoning: true });
 }
