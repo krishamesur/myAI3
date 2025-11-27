@@ -1,14 +1,13 @@
 // lib/stocks.ts
-// Handles:
-// 1) US stock data from TwelveData API
-// 2) Indian stock fundamentals from NIFTY 500 CSV
+// 1) US stock data from TwelveData
+// 2) Indian stock fundamentals from local NIFTY 500 CSV
 
 import fs from "fs";
 import path from "path";
 import Papa from "papaparse";
 
 // -------------------------------------------------------------
-// TYPES
+// Types
 // -------------------------------------------------------------
 
 export interface USStockData {
@@ -47,57 +46,65 @@ export async function fetchStockAnalysis(
 ): Promise<USStockData | null> {
   try {
     const apiKey = process.env.TWELVEDATA_API_KEY;
-    if (!apiKey) throw new Error("Missing TwelveData API key");
+    if (!apiKey) throw new Error("Missing TwelveData API key.");
 
-    // Quote API
+    // 1. Quote (close + 52w range)
     const quoteUrl = `https://api.twelvedata.com/quote?symbol=${symbol}&apikey=${apiKey}`;
     const quoteResp = await fetch(quoteUrl);
     const quoteJson = await quoteResp.json();
 
     if (quoteJson.status === "error") {
+      console.error("TwelveData quote API error:", quoteJson.message);
       return null;
     }
 
+    // 2. SMA 50
+    const sma50Url = `https://api.twelvedata.com/sma?symbol=${symbol}&interval=1day&time_period=50&apikey=${apiKey}`;
+    const sma50Resp = await fetch(sma50Url);
+    const sma50Json = await sma50Resp.json();
+    const sma50 = sma50Json.values?.[0]?.sma
+      ? Number(sma50Json.values[0].sma)
+      : null;
+
+    // 3. SMA 200
+    const sma200Url = `https://api.twelvedata.com/sma?symbol=${symbol}&interval=1day&time_period=200&apikey=${apiKey}`;
+    const sma200Resp = await fetch(sma200Url);
+    const sma200Json = await sma200Resp.json();
+    const sma200 = sma200Json.values?.[0]?.sma
+      ? Number(sma200Json.values[0].sma)
+      : null;
+
+    // 4. RSI 14
+    const rsiUrl = `https://api.twelvedata.com/rsi?symbol=${symbol}&interval=1day&time_period=14&apikey=${apiKey}`;
+    const rsiResp = await fetch(rsiUrl);
+    const rsiJson = await rsiResp.json();
+    const rsi14 = rsiJson.values?.[0]?.rsi
+      ? Number(rsiJson.values[0].rsi)
+      : null;
+
+    // 5. 1M / 6M / 1Y returns from time_series
+    async function getPastPrice(outputsize: number): Promise<number | null> {
+      const tsUrl = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1day&outputsize=${outputsize}&apikey=${apiKey}`;
+      const tsResp = await fetch(tsUrl);
+      const tsJson = await tsResp.json();
+
+      if (!tsJson.values || !Array.isArray(tsJson.values)) return null;
+      const values = tsJson.values;
+      const lastIndex = values.length - 1;
+      if (lastIndex < 1) return null;
+
+      return Number(values[lastIndex].close);
+    }
+
     const closeNow = Number(quoteJson.close);
-
-    // SMA helper
-    async function getIndicator(url: string): Promise<number | null> {
-      const resp = await fetch(url);
-      const json = await resp.json();
-      return json.values?.[0]?.[Object.keys(json.values[0])[1]]
-        ? Number(json.values[0][Object.keys(json.values[0])[1]])
-        : null;
-    }
-
-    const sma50 = await getIndicator(
-      `https://api.twelvedata.com/sma?symbol=${symbol}&interval=1day&time_period=50&apikey=${apiKey}`
-    );
-
-    const sma200 = await getIndicator(
-      `https://api.twelvedata.com/sma?symbol=${symbol}&interval=1day&time_period=200&apikey=${apiKey}`
-    );
-
-    const rsi14 = await getIndicator(
-      `https://api.twelvedata.com/rsi?symbol=${symbol}&interval=1day&time_period=14&apikey=${apiKey}`
-    );
-
-    // Returns helper
-    async function getPastPrice(days: number): Promise<number | null> {
-      const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1day&outputsize=${days}&apikey=${apiKey}`;
-      const resp = await fetch(url);
-      const json = await resp.json();
-      if (!json.values) return null;
-      return Number(json.values.at(-1).close);
-    }
-
-    function pct(oldPrice: number | null): number | null {
-      if (!oldPrice) return null;
-      return ((closeNow - oldPrice) / oldPrice) * 100;
-    }
-
-    const price1m = await getPastPrice(22);
+    const price1m = await getPastPrice(22); // ~1M trading days
     const price6m = await getPastPrice(130);
     const price1y = await getPastPrice(260);
+
+    function calcReturn(oldPrice: number | null): number | null {
+      if (!oldPrice || !isFinite(oldPrice)) return null;
+      return ((closeNow - oldPrice) / oldPrice) * 100;
+    }
 
     return {
       symbol: quoteJson.symbol,
@@ -107,78 +114,81 @@ export async function fetchStockAnalysis(
       sma_50: sma50,
       sma_200: sma200,
       rsi_14: rsi14,
-      return_1m: pct(price1m),
-      return_6m: pct(price6m),
-      return_1y: pct(price1y),
+      return_1m: calcReturn(price1m),
+      return_6m: calcReturn(price6m),
+      return_1y: calcReturn(price1y),
     };
   } catch (err) {
-    console.error("US fetch error:", err);
+    console.error("Error in fetchStockAnalysis:", err);
     return null;
   }
 }
 
 // -------------------------------------------------------------
-// INDIA STOCK CSV LOADING
+// INDIAN STOCK CSV LOADING (NIFTY 500)
 // -------------------------------------------------------------
 
 let nifty500Cache: IndiaStockFundamentals[] | null = null;
 
-function loadNiftyCSV() {
+function loadNifty500FromCsv() {
   if (nifty500Cache) return;
 
   try {
-    const filePath = path.join(process.cwd(), "data", "nifty500.csv");
-    const csv = fs.readFileSync(filePath, "utf8");
+    const csvPath = path.join(process.cwd(), "data", "nifty500.csv");
+    const file = fs.readFileSync(csvPath, "utf8");
 
-    const parsed = Papa.parse(csv, {
+    const parsed = Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
     });
 
-    nifty500Cache = parsed.data.map((row: any) => ({
-      company_name: row.Company?.trim() || "",
-      symbol: row.Symbol?.trim() || "",
-      market_cap: row.MarketCap ? Number(row.MarketCap) : null,
-      cmp: row.CMP ? Number(row.CMP) : null,
-      pe: row.PE ? Number(row.PE) : null,
-      pb: row.PB ? Number(row.PB) : null,
-      roe: row.ROE ? Number(row.ROE) : null,
-      roce: row.ROCE ? Number(row.ROCE) : null,
-      return_1m: row.Ret_1M ? Number(row.Ret_1M) : null,
-      return_6m: row.Ret_6M ? Number(row.Ret_6M) : null,
-      return_1y: row.Ret_1Y ? Number(row.Ret_1Y) : null,
-    }));
+    const rows = parsed.data as any[];
+
+    nifty500Cache = rows.map((row) => {
+      const num = (v: any): number | null => {
+        if (v === undefined || v === null || v === "") return null;
+        const cleaned = String(v).replace(/,/g, "");
+        const n = Number(cleaned);
+        return isNaN(n) ? null : n;
+      };
+
+      return {
+        company_name: (row["Company"] || "").toString().trim(),
+        symbol: (row["Symbol"] || "").toString().trim(), // if you added a Symbol column
+        market_cap: num(row["MarketCap"]),
+        cmp: num(row["CMP"]),
+        pe: num(row["PE"]),
+        pb: num(row["PB"]),
+        roe: num(row["ROE"]),
+        roce: num(row["ROCE"]),
+        return_1m: num(row["Ret_1M"]),
+        return_6m: num(row["Ret_6M"]),
+        return_1y: num(row["Ret_1Y"]),
+      };
+    });
   } catch (err) {
-    console.error("CSV load error:", err);
-    nifty500Cache = [];
+    console.error("Error loading nifty500.csv:", err);
+    nifty500Cache = null;
   }
 }
-
-// -------------------------------------------------------------
-// INDIA STOCK MATCHING (SYMBOL + NAME)
-// -------------------------------------------------------------
 
 export function fetchIndianStockFundamentals(
   input: string
 ): IndiaStockFundamentals | null {
-  loadNiftyCSV();
+  loadNifty500FromCsv();
   if (!nifty500Cache) return null;
 
-  const t = input.trim().toLowerCase();
+  const q = input.trim().toLowerCase();
 
-  // 1. Exact symbol match
-  let match = nifty500Cache.find((r) => r.symbol.toLowerCase() === t);
-  if (match) return match;
-
-  // 2. Exact company name
-  match = nifty500Cache.find((r) => r.company_name.toLowerCase() === t);
-  if (match) return match;
-
-  // 3. Partial name (HDFC Bank → matches “HDFC Bank Ltd”)
-  match = nifty500Cache.find((r) =>
-    r.company_name.toLowerCase().includes(t)
+  // 1) Exact symbol match (if Symbol column exists)
+  const bySymbol = nifty500Cache.find(
+    (row) => row.symbol && row.symbol.toLowerCase() === q
   );
-  if (match) return match;
+  if (bySymbol) return bySymbol;
 
-  return null;
+  // 2) Company name contains search text
+  const byName = nifty500Cache.find((row) =>
+    row.company_name.toLowerCase().includes(q)
+  );
+  return byName || null;
 }
