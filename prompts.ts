@@ -72,10 +72,6 @@ When the user gives a US stock symbol, follow this structure in your answer:
 
 3) Use these simple explanations for each metric:
 
-   - Market cap:
-     "This is the total value of the company in the stock market, equal to price times number of shares.
-      It helps you see if the company is small, mid sized, or very large."
-
    - Close price:
      "The latest price per share in the market."
 
