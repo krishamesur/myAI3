@@ -81,6 +81,8 @@
   --muted: #E2E8F7;
   --muted-foreground: #4B5563;
   --input: #B3C6FF;
+  --input-foreground: #0F172A; 
+
 
   /* Borders + rings */
   --border: #2248B0; 
@@ -134,6 +136,7 @@
 
   --border: #2248B0;
   --input: #B3C6FF;
+  --input-foreground: #0F172A;
   --ring: #FFFFFF;
   --destructive: #DC2626;
 
@@ -161,6 +164,9 @@
   body {
     @apply bg-background text-foreground;
   }
+  input, textarea {
+  color: var(--input-foreground);
+}
 
   .single-char-link {
     @apply bg-card text-card-foreground px-2 py-1 rounded-full hover:underline hover:scale-105 transition-all duration-100 !no-underline border-input border;
