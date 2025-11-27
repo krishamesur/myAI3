@@ -163,9 +163,20 @@
     @apply bg-background text-foreground;
   }
 
+  /* Input + textarea text (dark navy) */
   input,
   textarea {
     color: var(--input-foreground);
+  }
+
+  /* Chat bubble text (dark navy on white bubbles) */
+  .bg-card,
+  .bg-popover,
+  .bg-secondary,
+  .ringle-message,
+  .ringle-ai-message,
+  .ringle-user-message {
+    color: var(--card-foreground) !important;
   }
 
   .single-char-link {
