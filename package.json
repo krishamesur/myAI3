@@ -73,6 +73,7 @@
     "use-stick-to-bottom": "^1.1.1",
     "vaul": "^1.1.2",
     "zod": "^4.1.12"
+    "papaparse": "^5.4.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
