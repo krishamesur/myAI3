@@ -127,4 +127,65 @@ export async function fetchStockAnalysis(symbol: string): Promise<USStockData | 
 let nifty500Cache: any[] | null = null;
 
 function loadNifty500FromCsv() {
-  if (nifty500Cache) re
+  if (nifty500Cache) return;
+
+  try {
+    const filePath = path.join(process.cwd(), "data", "nifty500.csv");
+    const csvContent = fs.readFileSync(filePath, "utf8");
+
+    const parsed = Papa.parse(csvContent, {
+      header: true,
+      skipEmptyLines: true,
+    });
+
+    nifty500Cache = parsed.data.map((row: any) => ({
+      company_name: row.Company?.trim() || "",
+      symbol: row.Symbol?.trim() || "",
+      market_cap: row.MarketCap ? Number(row.MarketCap) : null,
+      cmp: row.CMP ? Number(row.CMP) : null,
+      pe: row.PE ? Number(row.PE) : null,
+      pb: row.PB ? Number(row.PB) : null,
+      roe: row.ROE ? Number(row.ROE) : null,
+      roce: row.ROCE ? Number(row.ROCE) : null,
+      return_1m: row.Ret_1M ? Number(row.Ret_1M) : null,
+      return_6m: row.Ret_6M ? Number(row.Ret_6M) : null,
+      return_1y: row.Ret_1Y ? Number(row.Ret_1Y) : null,
+    }));
+  } catch (error) {
+    console.error("Error loading NIFTY 500 CSV:", error);
+    nifty500Cache = [];
+  }
+}
+
+// -------------------------------------------------------------
+// FIND INDIAN STOCK BY COMPANY NAME OR SYMBOL
+// -------------------------------------------------------------
+
+export function fetchIndianStockFundamentals(
+  input: string
+): IndiaStockFundamentals | null {
+  loadNifty500FromCsv();
+  if (!nifty500Cache) return null;
+
+  const text = input.trim().toLowerCase();
+
+  // 1) Exact symbol match (HINDALCO.NS, HDFCBANK)
+  let match = nifty500Cache.find(
+    (row) => row.symbol.toLowerCase() === text
+  );
+  if (match) return match;
+
+  // 2) Company name full match (HDFC Bank Ltd)
+  match = nifty500Cache.find(
+    (row) => row.company_name.toLowerCase() === text
+  );
+  if (match) return match;
+
+  // 3) Company name partial match (Hindalco → Hindalco Industries Ltd)
+  match = nifty500Cache.find((row) =>
+    row.company_name.toLowerCase().includes(text)
+  );
+  if (match) return match;
+
+  return null;
+}
