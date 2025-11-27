@@ -53,4 +53,103 @@
 
   /* Base */
   --background: #e5f0ff;           /* light blue */
-  --foreground: #0f172a;           /* very da*
+  --foreground: #0f172a;           /* very dark navy */
+
+  /* Surfaces */
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+
+  /* Primary indigo */
+  --primary: #4338ca;              /* indigo */
+  --primary-foreground: #ffffff;
+
+  /* Secondary and accent blues */
+  --secondary: #dbeafe;
+  --secondary-foreground: #1e3a8a;
+  --muted: #e5e7eb;
+  --muted-foreground: #4b5563;
+  --accent: #dbeafe;
+  --accent-foreground: #1e3a8a;
+
+  /* Status and chrome */
+  --destructive: #dc2626;
+  --border: #cbd5e1;
+  --input: #cbd5e1;
+  --ring: #4338ca;
+
+  /* Charts */
+  --chart-1: #4f46e5;
+  --chart-2: #6366f1;
+  --chart-3: #818cf8;
+  --chart-4: #a5b4fc;
+  --chart-5: #c7d2fe;
+
+  /* Sidebar */
+  --sidebar: #e5f0ff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #4338ca;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #dbeafe;
+  --sidebar-accent-foreground: #1e3a8a;
+  --sidebar-border: #cbd5e1;
+  --sidebar-ring: #4338ca;
+}
+
+/* No real dark mode – same values as :root */
+.dark {
+  --radius: 0.625rem;
+
+  --background: #e5f0ff;
+  --foreground: #0f172a;
+
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+
+  --primary: #4338ca;
+  --primary-foreground: #ffffff;
+
+  --secondary: #dbeafe;
+  --secondary-foreground: #1e3a8a;
+  --muted: #e5e7eb;
+  --muted-foreground: #4b5563;
+  --accent: #dbeafe;
+  --accent-foreground: #1e3a8a;
+
+  --destructive: #dc2626;
+  --border: #cbd5e1;
+  --input: #cbd5e1;
+  --ring: #4338ca;
+
+  --chart-1: #4f46e5;
+  --chart-2: #6366f1;
+  --chart-3: #818cf8;
+  --chart-4: #a5b4fc;
+  --chart-5: #c7d2fe;
+
+  --sidebar: #e5f0ff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #4338ca;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #dbeafe;
+  --sidebar-accent-foreground: #1e3a8a;
+  --sidebar-border: #cbd5e1;
+  --sidebar-ring: #4338ca;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  .single-char-link {
+    @apply bg-card text-card-foreground px-2 py-1 rounded-full hover:underline hover:scale-105 transition-all duration-100 !text-foreground !no-underline border-input border;
+  }
+}
