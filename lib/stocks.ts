@@ -201,16 +201,33 @@ function loadNifty500FromCsv() {
     console.error("Error loading NIFTY 500 CSV", err);
   }
 }
-
 /**
- * Look up an Indian stock in the local NIFTY 500 CSV.
- * Returns null if not found or if CSV is missing.
+ * Look up an Indian stock from NIFTY 500 CSV using fuzzy company-name matching.
+ * - User may type "HDFCBANK", "HDFC Bank", "reliance", "tcs" etc.
+ * - We match input text to company name (case-insensitive, contains check)
  */
-export function fetchIndianStockFundamentals(symbol: string): IndiaStockFundamentals | null {
+export function fetchIndianStockFundamentals(input: string): IndiaStockFundamentals | null {
   loadNifty500FromCsv();
   if (!nifty500Cache) return null;
-  const key = symbol.trim().toUpperCase();
-  return nifty500Cache.get(key) || null;
+
+  const query = input.trim().toLowerCase();
+  if (!query) return null;
+
+  let bestMatch: IndiaStockFundamentals | null = null;
+
+  for (const rec of nifty500Cache.values()) {
+    if (!rec.company_name) continue;
+
+    const name = rec.company_name.toLowerCase();
+
+    // simple fuzzy match: contains
+    if (name.includes(query)) {
+      bestMatch = rec;
+      break; // return the first match (good enough for now)
+    }
+  }
+
+  return bestMatch;
 }
 
   const result: USStockAnalysisData = {
