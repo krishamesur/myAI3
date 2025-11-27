@@ -54,7 +54,7 @@ function detectCountryFromHistory(messages: UIMessage[]): CountryMode {
   return mode;
 }
 
-// Simple heuristic to see if a string looks like a stock symbol
+// Simple heuristic to see if a string looks like a US style stock symbol
 function looksLikeSymbol(text: string): boolean {
   if (!text) return false;
   const trimmed = text.trim();
@@ -122,40 +122,41 @@ export async function POST(req: Request) {
 
   const latestText = textParts.trim();
   const countryMode = detectCountryFromHistory(messages);
+  const lower = latestText.toLowerCase();
 
   let usStockData: any = null;
   let indiaStockData: any = null;
   let analysisCountry: CountryMode = null;
   let shouldAskCountryClarification = false;
-// If no country is chosen yet, we may need to explicitly ask at the start
-let forceAskMarketQuestion = false;
 
-if (!countryMode) {
-  const lower = latestText.toLowerCase();
+  // If no country is chosen yet, we may need to explicitly ask at the start
+  let forceAskMarketQuestion = false;
 
-  const isGreetingOrGeneric =
-    !lower ||
-    lower === "hi" ||
-    lower === "hello" ||
-    lower === "hey" ||
-    lower.includes("help") ||
-    lower.includes("analyse") ||
-    lower.includes("research") ||
-    lower.includes("stock");
+  if (!countryMode) {
+    const isGreetingOrGeneric =
+      !lower ||
+      lower === "hi" ||
+      lower === "hello" ||
+      lower === "hey" ||
+      lower.includes("help") ||
+      lower.includes("analyse") ||
+      lower.includes("analyze") ||
+      lower.includes("research") ||
+      lower.includes("stock");
 
-  // For the very first interaction, just ask them which market they want
-  if (isGreetingOrGeneric) {
-    forceAskMarketQuestion = true;
+    // For the very first interaction, just ask them which market they want
+    if (isGreetingOrGeneric) {
+      forceAskMarketQuestion = true;
+    }
   }
-}
 
   // 3) Check if the latest message is just a country selection
-  const lower = latestText.toLowerCase();
   const isUsSelection =
     lower === "us" ||
     lower === "usa" ||
     lower === "us stocks" ||
     lower.includes("united states stocks");
+
   const isIndiaSelection =
     lower === "india" ||
     lower === "indian stocks" ||
@@ -166,14 +167,12 @@ if (!countryMode) {
 
   if (isCountrySelection) {
     // User just chose a country. Do not call any stock API now.
-    // The model will simply acknowledge and ask for a stock symbol.
-  } else if (looksLikeSymbol(latestText)) {
-    // User typed something that looks like a stock symbol
+    // The model will simply acknowledge and ask for a stock symbol or name.
+  } else {
+    // 4) Handle stock queries
 
-    if (!countryMode) {
-      // We do not know yet if this is US or India. Ask for clarification.
-      shouldAskCountryClarification = true;
-    } else if (countryMode === "US") {
+    // Case A: US mode → only act if it looks like a symbol
+    if (countryMode === "US" && looksLikeSymbol(latestText)) {
       analysisCountry = "US";
       try {
         usStockData = await fetchStockAnalysis(latestText);
@@ -181,7 +180,10 @@ if (!countryMode) {
       } catch (error) {
         console.error("Error fetching US stock analysis", error);
       }
-    } else if (countryMode === "IN") {
+    }
+
+    // Case B: India mode → accept symbol-like OR plain company names (eg "HDFC Bank")
+    else if (countryMode === "IN" && latestText.length > 1) {
       analysisCountry = "IN";
       try {
         indiaStockData = fetchIndianStockFundamentals(latestText);
@@ -190,9 +192,14 @@ if (!countryMode) {
         console.error("Error fetching Indian stock fundamentals", error);
       }
     }
+
+    // Case C: no country chosen yet, but user typed something that looks like a symbol
+    else if (!countryMode && looksLikeSymbol(latestText)) {
+      shouldAskCountryClarification = true;
+    }
   }
 
-  // 4) Build the system prompt with any data we fetched
+  // 5) Build the system prompt with any data we fetched
   let systemPrompt = SYSTEM_PROMPT;
 
   if (analysisCountry === "US" && usStockData) {
@@ -210,9 +217,9 @@ if (!countryMode) {
         "Here is structured fundamental data for this stock, in JSON format. " +
         "Use this data to explain the basic fundamental metrics in simple language:\n" +
         JSON.stringify(indiaStockData);
-    } else if (looksLikeSymbol(latestText)) {
+    } else if (latestText.length > 1 && countryMode === "IN") {
       systemPrompt +=
-        "\n\nThe user requested analysis for an Indian stock symbol that is not found in the NIFTY 500 CSV.\n" +
+        "\n\nThe user requested analysis for an Indian stock that is not found in the NIFTY 500 CSV.\n" +
         "Politely tell the user that this stock is not part of the NIFTY 500 list right now and ask them to enter a stock from NIFTY 500. " +
         "Do not attempt to analyse the stock.";
     }
@@ -227,19 +234,18 @@ if (!countryMode) {
   if (isCountrySelection) {
     systemPrompt +=
       "\n\nThe user has just chosen which market they want to research (US or Indian stocks).\n" +
-      "Acknowledge their choice in one short sentence and ask them to type a stock symbol they want to analyse.";
+      "Acknowledge their choice in one short sentence and ask them to type a stock symbol (for US) or a stock symbol or company name (for Indian NIFTY 500) that they want to analyse.";
   }
-  
+
   if (forceAskMarketQuestion) {
-  systemPrompt +=
-    "\n\nThe user has not chosen a market yet. Do not analyse any stocks now and do not call any tools.\n" +
-    "Ask them this exact question in simple words:\n" +
-    "\"Do you want to research US stocks or Indian (NIFTY 500) stocks today?\"\n" +
-    "Wait for their answer before you try to analyse any stock.";
-}
+    systemPrompt +=
+      "\n\nThe user has not chosen a market yet. Do not analyse any stocks now and do not call any tools.\n" +
+      "Ask them this exact question in simple words:\n" +
+      "\"Do you want to research US stocks or Indian (NIFTY 500) stocks today?\"\n" +
+      "Wait for their answer before you try to analyse any stock.";
+  }
 
-
-  // 5) Call the model as before
+  // 6) Call the model as before
   const result = streamText({
     model: MODEL,
     system: systemPrompt,
